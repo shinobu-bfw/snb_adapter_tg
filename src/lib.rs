@@ -8,7 +8,7 @@ use snb_core::event::{ChatType, ContentItem, Event, Message};
 use snb_core::plugin::{PluginType, SnbPlugin, Version};
 use snb_macros::plugin;
 use teloxide::prelude::*;
-use teloxide::types::{ChatKind, MessageEntityKind, PublicChatKind};
+use teloxide::types::{ChatKind, MessageEntityKind, PublicChatKind, ReplyParameters};
 
 #[derive(Deserialize)]
 struct Config {
@@ -95,8 +95,18 @@ impl SnbPlugin for TGAdapter {
             return;
         };
         let bot = bot.clone();
+        let reply_to = msg.reply_to.clone();
         tokio::task::spawn(async move {
-            if let Err(e) = bot.send_message(ChatId(chat_id), text).await {
+            let mut req = bot.send_message(ChatId(chat_id), text);
+            if let Some(rid) = reply_to {
+                if let Ok(msg_id) = rid.parse::<i32>() {
+                    req = req.reply_parameters(ReplyParameters {
+                        message_id: teloxide::types::MessageId(msg_id),
+                        ..Default::default()
+                    });
+                }
+            }
+            if let Err(e) = req.await {
                 log::error!("TGAdapter send_message error: {e}");
             }
         });
@@ -190,7 +200,12 @@ fn convert_message(msg: &teloxide::types::Message) -> Option<Event> {
         }
     }
 
+    let id = Some(msg.id.0.to_string());
+    let reply_to = msg.reply_to_message().map(|m| m.id.0.to_string());
+
     let event_msg = Message {
+        id,
+        reply_to,
         content,
         from,
         to: Some(chat_id),
