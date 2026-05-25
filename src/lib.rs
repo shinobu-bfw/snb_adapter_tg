@@ -81,7 +81,7 @@ impl SnbPlugin for TGAdapter {
         log::info!("unloaded!");
     }
 
-    fn on_event(&mut self, event: &Event) {
+    fn on_event(&self, event: &Event) {
         if event.receiver.as_deref() != Some(self.name()) {
             return;
         }
@@ -98,13 +98,13 @@ impl SnbPlugin for TGAdapter {
         let reply_to = msg.reply_to.clone();
         tokio::task::spawn(async move {
             let mut req = bot.send_message(ChatId(chat_id), text);
-            if let Some(rid) = reply_to {
-                if let Ok(msg_id) = rid.parse::<i32>() {
-                    req = req.reply_parameters(ReplyParameters {
-                        message_id: teloxide::types::MessageId(msg_id),
-                        ..Default::default()
-                    });
-                }
+            if let Some(rid) = reply_to
+                && let Ok(msg_id) = rid.parse::<i32>()
+            {
+                req = req.reply_parameters(ReplyParameters {
+                    message_id: teloxide::types::MessageId(msg_id),
+                    ..Default::default()
+                });
             }
             if let Err(e) = req.await {
                 log::error!("TGAdapter send_message error: {e}");
@@ -280,7 +280,7 @@ fn convert_message(update: &Update, msg: &teloxide::types::Message) -> Option<Ev
     let (event_type, command, message) = match command {
         Some(cmd) => (snb_core::event::EventType::Command, Some(cmd), Some(event_msg)),
         None => (
-            snb_core::event::EventType::Other(kind_name.to_string()),
+            snb_core::event::EventType::Message,
             None,
             Some(event_msg),
         ),
@@ -289,7 +289,7 @@ fn convert_message(update: &Update, msg: &teloxide::types::Message) -> Option<Ev
     Some(Event {
         event_type,
         source: "tg-adapter".to_string(),
-        data: String::new(),
+        data: kind_name.to_string(),
         command,
         message,
         sender: Some("TGAdapter".to_string()),
