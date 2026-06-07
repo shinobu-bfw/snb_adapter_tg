@@ -141,19 +141,52 @@ async fn tg_dispatcher(bot: Arc<dyn BotContext>) {
 
     log::info!("start Telegram dispatcher");
 
-    let handler = |update: Update, bot_ctx: Arc<dyn BotContext>| async move {
-        if let Some(event) = convert_update(&update) {
-            bot_ctx.emit_event(event);
+    // Reconnect loop. teloxide's dispatcher *panics* (rather than returning an
+    // error) when it can't reach the Telegram API while preparing — e.g. a
+    // network timeout on the initial GetMe at startup. We run each attempt in a
+    // spawned task so tokio turns such a panic into a `JoinError` instead of
+    // letting it unwind off this adapter thread, then retry with exponential
+    // backoff so a transient outage no longer takes the whole bot down.
+    let mut backoff = std::time::Duration::from_secs(1);
+    const MAX_BACKOFF: std::time::Duration = std::time::Duration::from_secs(60);
+    loop {
+        let tg_bot = tg_bot.clone();
+        let bot_ctx = bot.clone();
+        let attempt = tokio::spawn(async move {
+            let handler = |update: Update, bot_ctx: Arc<dyn BotContext>| async move {
+                if let Some(event) = convert_update(&update) {
+                    bot_ctx.emit_event(event);
+                }
+                respond(())
+            };
+
+            let mut dispatcher =
+                Dispatcher::builder(tg_bot, dptree::entry().branch(dptree::endpoint(handler)))
+                    .dependencies(dptree::deps![bot_ctx])
+                    .build();
+
+            dispatcher.dispatch().await;
+        });
+
+        match attempt.await {
+            // Dispatcher returned on its own — a clean shutdown, stop retrying.
+            Ok(()) => break,
+            Err(e) if e.is_panic() => {
+                log::error!(
+                    "Telegram dispatcher crashed (network unreachable?); reconnecting in {}s",
+                    backoff.as_secs()
+                );
+            }
+            // Task cancelled (e.g. runtime shutting down): don't spin, just stop.
+            Err(e) => {
+                log::error!("Telegram dispatcher task aborted: {e}");
+                break;
+            }
         }
-        respond(())
-    };
 
-    let mut dispatcher =
-        Dispatcher::builder(tg_bot, dptree::entry().branch(dptree::endpoint(handler)))
-            .dependencies(dptree::deps![bot.clone()])
-            .build();
-
-    dispatcher.dispatch().await;
+        tokio::time::sleep(backoff).await;
+        backoff = (backoff * 2).min(MAX_BACKOFF);
+    }
 }
 
 fn convert_update(update: &Update) -> Option<Event> {
