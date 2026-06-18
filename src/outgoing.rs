@@ -1,4 +1,3 @@
-use std::future::Future;
 use std::time::Duration;
 
 use anyhow::Context as _;
@@ -30,7 +29,7 @@ pub(crate) fn send_event(event: &Event) -> anyhow::Result<()> {
     let origin = event.source.clone();
     let msg = msg.clone();
 
-    spawn_send_task(async move {
+    crate::task::spawn(async move {
         match event_type {
             EventType::Message => send_message_items(bot, chat_id, msg, origin).await,
             EventType::MessageEdit => edit_message_item(bot, chat_id, msg).await,
@@ -40,17 +39,6 @@ pub(crate) fn send_event(event: &Event) -> anyhow::Result<()> {
     });
 
     Ok(())
-}
-
-fn spawn_send_task<F>(future: F)
-where
-    F: Future<Output = ()> + Send + 'static,
-{
-    if let Ok(handle) = tokio::runtime::Handle::try_current() {
-        handle.spawn(future);
-    } else {
-        std::thread::spawn(move || snb_core::adapter::run_async(future));
-    }
 }
 
 async fn send_message_items(bot: Bot, chat_id: i64, msg: Message, origin: String) {
@@ -527,7 +515,7 @@ fn schedule_delete_after(bot: &Bot, chat_id: i64, message_id: MessageId, delay: 
     };
 
     let bot = bot.clone();
-    spawn_send_task(async move {
+    crate::task::spawn(async move {
         tokio::time::sleep(delay).await;
         if let Err(e) = bot.delete_message(ChatId(chat_id), message_id).await {
             log::warn!("TGAdapter delete_after delete_message error: {e}");

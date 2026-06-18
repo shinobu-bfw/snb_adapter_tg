@@ -4,11 +4,13 @@
 //! updates into [`Event`](snb_core::event::Event)s. Requires a bot token
 //! configured in `configs/TGAdapter/config.toml`.
 
+mod commands;
 mod config;
 mod convert;
 mod dispatcher;
 mod outgoing;
 mod state;
+mod task;
 
 use std::path::Path;
 use std::sync::Arc;
