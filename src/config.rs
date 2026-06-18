@@ -19,6 +19,10 @@ impl Config {
     pub(crate) fn is_admin(&self, user_id: &str) -> bool {
         self.admins.iter().any(|admin| admin.matches(user_id))
     }
+
+    pub(crate) fn admin_ids(&self) -> Vec<String> {
+        self.admins.iter().map(AdminId::as_string).collect()
+    }
 }
 
 impl AdminId {
@@ -26,6 +30,13 @@ impl AdminId {
         match self {
             Self::String(id) => id == user_id,
             Self::Integer(id) => id.to_string() == user_id,
+        }
+    }
+
+    fn as_string(&self) -> String {
+        match self {
+            Self::String(id) => id.clone(),
+            Self::Integer(id) => id.to_string(),
         }
     }
 }

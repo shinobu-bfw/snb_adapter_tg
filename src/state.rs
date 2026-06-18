@@ -34,6 +34,15 @@ pub(crate) fn is_configured_admin(user_id: Option<&str>) -> bool {
         .is_some_and(|config| config.is_admin(user_id))
 }
 
+pub(crate) fn admin_ids() -> Vec<String> {
+    CONFIG
+        .read()
+        .unwrap()
+        .as_ref()
+        .map(Config::admin_ids)
+        .unwrap_or_default()
+}
+
 pub(crate) fn set_telegram_bot(bot: Bot) {
     *TG_BOT.write().unwrap() = Some(bot);
 }
