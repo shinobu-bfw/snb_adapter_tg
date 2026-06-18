@@ -1,5 +1,8 @@
 use snb_core::command::{CommandSpec, CommandVisibility};
-use teloxide::types::BotCommand;
+use teloxide::prelude::*;
+use teloxide::types::{BotCommand, BotCommandScope, ChatId, Recipient};
+
+use crate::state;
 
 /// Commands grouped by the Telegram scope they belong in.
 pub(crate) struct MenuCommands {
@@ -55,6 +58,44 @@ pub(crate) fn partition_commands(specs: &[CommandSpec]) -> MenuCommands {
         }
     }
     menu
+}
+
+/// Push the current command set to Telegram: public commands to the default
+/// scope, and public + admin commands scoped to each configured admin's private
+/// chat. Fire-and-forget; errors are logged. Safe to call before the bot is
+/// initialized (no-op until `state::set_telegram_bot`).
+pub(crate) fn sync_commands() {
+    let Some(bot) = state::telegram_bot() else {
+        return;
+    };
+    let specs = snb_core::context::bot().commands();
+    let menu = partition_commands(&specs);
+    let admin_ids = state::admin_ids();
+
+    crate::task::spawn(async move {
+        if let Err(e) = bot
+            .set_my_commands(menu.default)
+            .scope(BotCommandScope::Default)
+            .await
+        {
+            log::warn!("TGAdapter set_my_commands (default scope) failed: {e}");
+        }
+
+        for id in admin_ids {
+            let Ok(chat_id) = id.parse::<i64>() else {
+                log::warn!("TGAdapter skipping non-numeric admin id '{id}' for command scope");
+                continue;
+            };
+            let scope = BotCommandScope::Chat {
+                chat_id: Recipient::Id(ChatId(chat_id)),
+            };
+            if let Err(e) = bot.set_my_commands(menu.admin.clone()).scope(scope).await {
+                // A "chat not found" here means the admin has not started a DM
+                // with the bot yet; the next sync (or their first message) fixes it.
+                log::warn!("TGAdapter set_my_commands for admin {chat_id} failed: {e}");
+            }
+        }
+    });
 }
 
 #[cfg(test)]

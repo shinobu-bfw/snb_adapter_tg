@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use snb_core::adapter::{Adapter, run_async};
 use snb_core::context::{self, BotContext};
-use snb_core::event::Event;
+use snb_core::event::{Event, EventType};
 use snb_core::plugin::{PluginType, SnbPlugin, Version};
 use snb_macros::plugin;
 
@@ -75,6 +75,17 @@ impl SnbPlugin for TGAdapter {
     fn on_unload(&mut self) {
         state::reset();
         log::info!("unloaded!");
+    }
+
+    fn on_event(&self, event: &Event) {
+        // Keep the Telegram command menu in sync as plugins (and their commands)
+        // come and go. `sync_commands` no-ops until the bot is initialized.
+        if matches!(
+            event.event_type,
+            EventType::PluginLoaded | EventType::PluginUnloaded
+        ) {
+            crate::commands::sync_commands();
+        }
     }
 }
 

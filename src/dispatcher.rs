@@ -30,6 +30,7 @@ pub(crate) async fn run(bot: Arc<dyn BotContext>) {
         }
     }
     state::set_telegram_bot(tg_bot.clone());
+    crate::commands::sync_commands();
 
     log::info!("start Telegram dispatcher");
 
