@@ -152,8 +152,7 @@ fn convert_message(update: &Update, msg: &teloxide::types::Message) -> Option<Ev
         }
     });
 
-    let mut chat_extra = BTreeMap::new();
-    chat_extra.insert("raw_kind".to_string(), raw_kind.to_string());
+    let chat_extra = BTreeMap::from([("raw_kind".to_string(), raw_kind.to_string())]);
     let chat = Chat {
         id: chat_id,
         kind: Some(chat_type),
