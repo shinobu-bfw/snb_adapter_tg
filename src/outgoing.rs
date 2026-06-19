@@ -18,9 +18,10 @@ pub(crate) fn send_event(event: &Event) -> anyhow::Result<()> {
     let Some(msg) = &event.message else {
         return Ok(());
     };
-    let Some(chat_id) = msg.to.as_deref() else {
-        anyhow::bail!("TGAdapter outgoing message is missing message.to chat id");
-    };
+    let chat_id = msg.chat_id();
+    if chat_id.is_empty() {
+        anyhow::bail!("TGAdapter outgoing message is missing chat id");
+    }
     let chat_id = chat_id
         .parse::<i64>()
         .with_context(|| format!("invalid Telegram chat id: {chat_id}"))?;
@@ -448,9 +449,9 @@ fn emit_message_sent_if_needed(
         Some(local_id.to_string()),
     );
     if let Some(msg) = event.message.as_mut() {
-        msg.to = Some(chat_id.to_string());
+        msg.chat = snb_core::event::Chat::new(chat_id.to_string());
     }
-    event.receiver = Some(origin.to_string());
+    event.target_plugin = Some(origin.to_string());
     context::bot().emit_event(event);
 }
 

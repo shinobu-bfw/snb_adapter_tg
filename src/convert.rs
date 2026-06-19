@@ -1,4 +1,8 @@
-use snb_core::event::{ChatType, ContentItem, Event, EventType, FileSource, ImageSource, Message};
+use std::collections::BTreeMap;
+
+use snb_core::event::{
+    Chat, ChatType, ContentItem, Event, EventType, FileSource, ImageSource, Message, Sender,
+};
 use teloxide::types::{ChatKind, MessageEntityKind, PublicChatKind, Update, UpdateKind};
 
 use crate::state;
@@ -46,8 +50,8 @@ pub(crate) fn convert_update(update: &Update) -> Option<Event> {
                 data,
                 command: None,
                 message: None,
-                sender: Some("TGAdapter".to_string()),
-                receiver: None,
+                reply_plugin: Some("TGAdapter".to_string()),
+                target_plugin: None,
             })
         }
     }
@@ -121,12 +125,41 @@ fn convert_message(update: &Update, msg: &teloxide::types::Message) -> Option<Ev
 
     let from = msg.from.as_ref().map(|u| u.id.0.to_string());
     let chat_id = msg.chat.id.0.to_string();
-    let chat_type = match &msg.chat.kind {
-        ChatKind::Private(_) => ChatType::Private,
+    let (chat_type, raw_kind) = match &msg.chat.kind {
+        ChatKind::Private(_) => (ChatType::Private, "private"),
         ChatKind::Public(public) => match public.kind {
-            PublicChatKind::Group | PublicChatKind::Supergroup(_) => ChatType::Group,
-            PublicChatKind::Channel(_) => ChatType::Guild,
+            PublicChatKind::Group => (ChatType::Group, "group"),
+            PublicChatKind::Supergroup(_) => (ChatType::Group, "supergroup"),
+            PublicChatKind::Channel(_) => (ChatType::Channel, "channel"),
         },
+    };
+
+    let sender = msg.from.as_ref().map(|u| {
+        let mut extra = BTreeMap::new();
+        if u.is_premium {
+            extra.insert("is_premium".to_string(), "true".to_string());
+        }
+        let full = u.full_name();
+        Sender {
+            id: u.id.0.to_string(),
+            username: u.username.clone(),
+            display_name: (!full.is_empty()).then_some(full),
+            first_name: Some(u.first_name.clone()),
+            last_name: u.last_name.clone(),
+            is_bot: u.is_bot,
+            language: u.language_code.clone(),
+            extra,
+        }
+    });
+
+    let mut chat_extra = BTreeMap::new();
+    chat_extra.insert("raw_kind".to_string(), raw_kind.to_string());
+    let chat = Chat {
+        id: chat_id,
+        kind: Some(chat_type),
+        title: msg.chat.title().map(str::to_string),
+        username: msg.chat.username().map(str::to_string),
+        extra: chat_extra,
     };
 
     let entities = msg
@@ -173,12 +206,11 @@ fn convert_message(update: &Update, msg: &teloxide::types::Message) -> Option<Ev
         id: Some(msg.id.0.to_string()),
         reply_to: msg.reply_to_message().map(|m| m.id.0.to_string()),
         content,
-        from: from.clone(),
-        to: Some(chat_id),
+        sender,
+        chat,
         at,
-        chat_type: Some(chat_type),
         is_admin: state::is_configured_admin(from.as_deref()),
-        delete_after: None,
+        ..Default::default()
     };
 
     let kind_name = match &update.kind {
@@ -202,7 +234,7 @@ fn convert_message(update: &Update, msg: &teloxide::types::Message) -> Option<Ev
         data: kind_name.to_string(),
         command,
         message,
-        sender: Some("TGAdapter".to_string()),
-        receiver: None,
+        reply_plugin: Some("TGAdapter".to_string()),
+        target_plugin: None,
     })
 }
